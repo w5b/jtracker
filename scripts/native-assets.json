@@ -1,0 +1,35 @@
+{
+  "release": "v2.2.2",
+  "assets": [
+    {
+      "name": "libcurl-impersonate-v2.2.2.aarch64-linux-gnu.tar.gz",
+      "url": "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.2/libcurl-impersonate-v2.2.2.aarch64-linux-gnu.tar.gz",
+      "sha256": "b3c1c4464100e050fab66314e84f3a776d5973172e6c63e2ad1d3dea6d4870ad"
+    },
+    {
+      "name": "libcurl-impersonate-v2.2.2.aarch64-linux-musl.tar.gz",
+      "url": "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.2/libcurl-impersonate-v2.2.2.aarch64-linux-musl.tar.gz",
+      "sha256": "6aa66d8924426110aff2ef70698e468b440e4c7bc773e22d07b6c364b718253e"
+    },
+    {
+      "name": "libcurl-impersonate-v2.2.2.arm64-macos.tar.gz",
+      "url": "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.2/libcurl-impersonate-v2.2.2.arm64-macos.tar.gz",
+      "sha256": "6b5b7c7d7ffca9d9f5a17d45d4484eae1b520f870e71f0552914749813310536"
+    },
+    {
+      "name": "libcurl-impersonate-v2.2.2.x86_64-linux-gnu.tar.gz",
+      "url": "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.2/libcurl-impersonate-v2.2.2.x86_64-linux-gnu.tar.gz",
+      "sha256": "da09231c2809977266ddd00a0b60e638f8e67fc5dc97811065a185fa951a3275"
+    },
+    {
+      "name": "libcurl-impersonate-v2.2.2.x86_64-linux-musl.tar.gz",
+      "url": "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.2/libcurl-impersonate-v2.2.2.x86_64-linux-musl.tar.gz",
+      "sha256": "deab6dbfbbd7259786009f973f8f0e8c07f0828de67a345d96c431dd90218389"
+    },
+    {
+      "name": "libcurl-impersonate-v2.2.2.x86_64-macos.tar.gz",
+      "url": "https://github.com/lexiforest/curl-impersonate/releases/download/v2.2.2/libcurl-impersonate-v2.2.2.x86_64-macos.tar.gz",
+      "sha256": "ab2f6c30505f320c6e2f5fad3588d3f729fb65c727d3a2d9393a5a9e33e1d510"
+    }
+  ]
+}
