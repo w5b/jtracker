@@ -161,6 +161,13 @@ required, and the large source bundle is never imported or executed.
 See [event API, source mapping and behavior limits](docs/jtracker-events.md) and
 the [tweet-processing example](examples/tweets.ts): `bun examples/tweets.ts FRA`.
 
+`bun JTracker.ts NY` logs every incoming Socket.IO application event, including
+non-tweet and unknown events. It prints whether `JTRACKER_TOKEN` was supplied and
+reports if a connection receives no application events for its first 15 seconds.
+A connected socket alone does not establish that an account feed was subscribed.
+For selected processed events, use `examples/tweets.ts`. When importing the class,
+raw logging is opt-in with `{ logEvents: true }` or `tracker.on('raw', handler)`.
+
 For another Socket.IO endpoint, use the same adapter directly:
 
 ```js
@@ -202,9 +209,9 @@ The production JTracker hosts were not contacted during these tests.
 | `socket.io-client` 4.8.3 | Socket.IO events, namespaces, acknowledgements and reconnection; pre-existing dependency |
 | `engine.io-client` 6.6.6 | Transport base class and Engine.IO connection/heartbeat handling |
 | `engine.io-parser` 5.2.3 | Engine.IO packet encoding/decoding |
-| `socket.io` 4.8.3 | Controlled test server; pre-existing dependency |
+| `socket.io` 4.8.3 | Development-only controlled test server; excluded from production installs |
 | `hpack.js` 2.1.6, `yaml` 2.9.1 | Validation-only HTTP/2 decoding and reference parsing |
-| `typescript`, `@types/bun` | Pre-existing TypeScript tooling/types; Bun is not required to run the app |
+| `typescript`, `@types/bun` | Development-only TypeScript tooling/types; Bun is not required to run the app |
 
 Engine.IO packages were already transitive dependencies of Socket.IO; they are now
 declared directly because the adapter imports them. `package-lock.json` records all

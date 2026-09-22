@@ -17,7 +17,7 @@ const JTRACKER_URL: Record<Region, string> = {
 const ORIGIN = "https://j7tracker.io";
 
 export interface JTrackerOptions {
-  /** Site account token, sent as namespace auth and user_connected on each connect. */
+  /** Site sessionId, sent as auth.token and user_connected on each connect. */
   token?: string;
   feed?: FeedOptions;
   /** Optional endpoint/namespace override, useful for controlled tests. */
@@ -138,15 +138,27 @@ export default class JTracker extends JTrackerFeed {
 // Importing the class does not open a connection. Run with npm run jtracker -- FRA.
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const region = (process.argv[2] ?? "FRA").toUpperCase() as Region;
-  const tracker = new JTracker(region, { token: process.env.JTRACKER_TOKEN });
-  tracker.on("tweet", tweet => console.log(`[tweet] @${tweet.author.handle}: ${tweet.displayText}`, { id: tweet.id, type: tweet.type }));
-  tracker.on("tweet_update", (tweet, context) => console.log(`[${context.sourceEvent}] ${tweet.id}`, tweet));
-  tracker.on("tweet_deleted", ({ id }) => console.log(`[tweet_deleted] ${id}`));
-  tracker.on("initialTweets", tweets => console.log(`[initialTweets] ${tweets.length} historical tweets`));
-  tracker.on("activity", activity => console.log(`[${activity.event}] @${activity.author.handle}`, activity));
-  tracker.on("auth_error", payload => console.error("[auth_error]", payload.error));
+  const token = process.env.JTRACKER_TOKEN;
+  const tracker = new JTracker(region, {
+    token, logEvents: true, socketOptions: { autoConnect: false },
+  });
+  // Print every application packet, including events not understood by the reducer.
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  const clearIdle = () => { clearTimeout(idleTimer); idleTimer = undefined; };
+  tracker.on("connect", () => {
+    clearIdle();
+    console.log(token ? "[socket] account session supplied via JTRACKER_TOKEN" : "[socket] no JTRACKER_TOKEN set; connected without an account session");
+    idleTimer = setTimeout(() => {
+      console.log("[socket] still connected, but no application events received in 15 seconds (all event logging is enabled)");
+      if (!token) console.log("[socket] for account-specific feeds, set JTRACKER_TOKEN to your site's sessionId");
+    }, 15_000);
+    idleTimer.unref();
+  });
+  tracker.on("raw", clearIdle);
+  tracker.on("disconnect", clearIdle);
   tracker.on("protocol_error", ({ event, message }) => console.error(`[protocol_error] ${event}: ${message}`));
-  const stop = () => { void tracker.close().catch(error => { console.error(error); process.exitCode = 1; }); };
+  const stop = () => { clearIdle(); void tracker.close().catch(error => { console.error(error); process.exitCode = 1; }); };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
+  tracker.socket.connect();
 }

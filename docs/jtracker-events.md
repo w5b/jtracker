@@ -13,7 +13,11 @@ bun examples/tweets.ts FRA
 # Node: node --experimental-strip-types examples/tweets.ts FRA
 ```
 
-Use your own site account token. JTracker supplies it as `auth.token`, then sends
+The socket token is the site's `sessionId`: the bundle initializes it from
+`vu("sessionId")` at source line 247366 and refreshes the same value after login.
+The REST account API sends this same session ID in its `x-session-id` header;
+these are two uses of the same credential. Set `JTRACKER_TOKEN` to that session ID.
+JTracker supplies it as `auth.token`, then sends
 `user_connected` with that same token after each namespace connection, as the site
 does at source lines 253488–253550. `socketOptions.auth` also accepts an object or
 callback; a callback is invoked again on reconnect for token refresh. An explicit
