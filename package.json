@@ -39,6 +39,9 @@
     "example": "node examples/local.js",
     "jtracker": "node --experimental-strip-types JTracker.ts",
     "jtracker:bun": "bun JTracker.ts",
+    "ui": "node --experimental-strip-types web/server.ts",
+    "ui:bun": "bun web/server.ts",
+    "ui:demo": "node --experimental-strip-types web/server.ts --demo",
     "check": "tsc --noEmit"
   }
 }

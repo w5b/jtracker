@@ -162,5 +162,8 @@ test('event inventory covers every application handler in the supplied bundle', 
   const source = await readFile(new URL('../source.js', import.meta.url), 'utf8');
   const names = new Set([...source.matchAll(/Sz\.on\("([^"]+)"/g)].map(match => match[1]));
   for (const lifecycle of ['connect', 'disconnect', 'connect_error']) names.delete(lifecycle);
+  // The accounts panel receives Sz as its `socket` prop (`a`) and adds this handler there.
+  assert.ok(source.includes('socket: Sz') && source.includes('a.on("main_feed_auto_add_updated"'));
+  names.add('main_feed_auto_add_updated');
   assert.deepEqual([...SITE_EVENTS].sort(), [...names].sort());
 });

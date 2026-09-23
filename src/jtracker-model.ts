@@ -151,3 +151,30 @@ export function tweetKeys(tweet: Data): string[] {
   return [...new Set(['url', 'tweet_url', 'instagramUrl', 'truthSocialUrl', 'binanceSquareUrl', 'tiktokUrl', 'youtubeUrl']
     .map(key => postKey(tweet[key])).filter((key): key is string => !!key))];
 }
+
+/** The site's account-handle normalization: drops every @ and space, then lowercases. */
+export function accountHandle(value: unknown): string {
+  return String(value ?? '').replace(/[@\s]+/g, '').toLowerCase();
+}
+/** Hidden-account lists arrive as a handle array or as `{ x: [...] }`; the site accepts both. */
+export function hiddenHandles(value: unknown): string[] {
+  const list = Array.isArray(value) ? value : array(object(value).x);
+  return [...new Set(list.map(accountHandle).filter(Boolean))];
+}
+export interface CustomAccounts extends Data {
+  accounts: string[];
+  availableAccounts: string[];
+  customConfigured: boolean;
+  deployCount: number;
+  maxAccounts: number;
+}
+/** Shape shared by GET /api/accounts and the custom_accounts_list socket event, with the site's defaults. */
+export function customAccounts(value: unknown): CustomAccounts {
+  const data = object(value), count = (key: string) => typeof data[key] === 'number' && Number.isFinite(data[key]) ? data[key] as number : 0;
+  return {
+    ...data,
+    accounts: array(data.accounts).filter((item): item is string => typeof item === 'string'),
+    availableAccounts: array(data.availableAccounts).filter((item): item is string => typeof item === 'string'),
+    customConfigured: data.customConfigured === true, deployCount: count('deployCount'), maxAccounts: count('maxAccounts'),
+  };
+}

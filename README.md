@@ -34,8 +34,8 @@ in Koffi's native pointer I/O; earlier Bun releases are not supported here.
 bun upgrade                         # if your installed Bun is older than 1.4.2
 bun install --frozen-lockfile
 bun scripts/setup-native.js         # once, or after moving to another platform
-bun JTracker.ts FRA                 # also NY or NJ
-# Equivalent: bun run jtracker:bun FRA
+bun JTracker.ts NY                  # or DFW
+# Equivalent: bun run jtracker:bun NY
 ```
 
 Run the local examples and checks without Node:
@@ -128,8 +128,8 @@ See [detailed comparison boundaries](docs/design.md#validation-and-claim-limits)
 
 ```sh
 export JTRACKER_TOKEN='your-site-account-token'
-npm run jtracker -- FRA   # also NY or NJ; connects to the selected JTracker service
-# Bun: bun JTracker.ts FRA
+npm run jtracker -- NY    # or DFW; the site's two feed regions
+# Bun: bun JTracker.ts NY
 ```
 
 The client connects to the root Socket.IO namespace using HTTP path `/socket.io/`.
@@ -140,7 +140,7 @@ not connect until you construct an instance:
 ```ts
 import JTracker from './JTracker.ts';
 
-const tracker = new JTracker('FRA', { token: process.env.JTRACKER_TOKEN });
+const tracker = new JTracker('NY', { token: process.env.JTRACKER_TOKEN });
 tracker.on('tweet', tweet => console.log(tweet.id, tweet.author.handle, tweet.text));
 tracker.on('tweet_update', (tweet, context) => console.log(context.sourceEvent, tweet));
 tracker.on('tweet_deleted', ({ id }) => console.log('deleted', id));
@@ -150,7 +150,7 @@ tracker.on('pnl_update', payload => console.log(payload));
 // await tracker.close();
 ```
 
-The application adapter covers all 37 Socket.IO event names in the supplied
+The application adapter covers all 38 main-socket event names in the supplied
 `source.js`. It handles authenticated registration, deduplicated live tweets,
 history, partial/subtweet updates, deletions, early AI/token enrichment, profile
 and follow activities, and correlated external post updates. Other feature
@@ -159,7 +159,7 @@ you the merged cache; `raw` exposes exact incoming events. No new packages are
 required, and the large source bundle is never imported or executed.
 
 See [event API, source mapping and behavior limits](docs/jtracker-events.md) and
-the [tweet-processing example](examples/tweets.ts): `bun examples/tweets.ts FRA`.
+the [tweet-processing example](examples/tweets.ts): `bun examples/tweets.ts NY`.
 
 `bun JTracker.ts NY` logs every incoming Socket.IO application event, including
 non-tweet and unknown events. It prints whether `JTRACKER_TOKEN` was supplied and
@@ -196,6 +196,66 @@ Controlled integration tests exercise the actual JTracker class against a local
 Socket.IO server, including WSS ClientHello/headers, root/custom namespaces, auth,
 binary acknowledgements, heartbeat, reconnection, shared cookies and shutdown.
 The production JTracker hosts were not contacted during these tests.
+
+## Account API
+
+`tracker.api` covers the site's account REST API with the same session and native
+transport: session check and token rotation, custom accounts, hidden accounts,
+watched accounts, feed settings, fee-claim tracking, and the Fomo, pump.fun,
+Telegram and subdomain trackers. `tracker.social` is the separate socket that
+delivers events for those trackers.
+
+```ts
+await tracker.api.checkSession();                 // { username, rotated, ... }
+await tracker.api.addCustomAccount('@someone');   // uses account quota
+await tracker.api.setAccountHidden('spammer', true);
+await tracker.api.track('telegram', 't.me/somechannel');
+tracker.social.on('telegram_event', payload => console.log(payload)).connect();
+```
+
+`bun examples/accounts.ts list` does the same from the terminal. Password login needs
+a Cloudflare Turnstile token from the site's human check, which this project does not
+generate; use the browser session ID as the token. See
+[account API and source socket](docs/jtracker-api.md) for every endpoint, error code
+and source location.
+
+## Browser UI
+
+`web/` is a local browser interface for the tracker: a live feed with token cards,
+contract address copy and chart links, a token radar, account activity, and
+management of your custom accounts, hidden accounts, sources and settings.
+
+```sh
+npm run ui                 # NY feed region; or: npm run ui -- DFW, or bun web/server.ts
+npm run ui:demo            # fictional data, no account and no network
+# then open http://127.0.0.1:5177   (--port N to change it)
+```
+
+The feed connects without signing in. Signed out, j7tracker sends AI coin suggestions
+for new posts, and the page shows each as a card: the post's author and link, its image,
+the suggested name and ticker, and tokens already launched on that idea with their
+contract addresses. Post text, activity, your custom and hidden accounts, sources and
+settings need a session. Use Sign in on the session card and paste the `sessionId`
+value from j7tracker.io's local storage in your browser. The server checks it with
+j7tracker before switching, so a wrong paste keeps your current session, and then
+reconnects the feed with the session. When a post arrives, it replaces its card.
+Signing out keeps the feed running without a session.
+
+With "Remember on this computer", the session is saved in `~/.jtracker/session`,
+readable only by your user, and used on the next start. If j7tracker rotates the
+token, the saved copy is updated. `JTRACKER_TOKEN`, when set, takes priority over the
+saved session; a rotation of that token is printed once in the terminal instead.
+
+The server serves the page on 127.0.0.1 only. The browser never receives the session
+token back; it reads a server-sent event stream and asks the server to run account
+actions. Requests with a foreign Host header, a missing or foreign Origin, or a
+non-JSON body are refused, which blocks other websites and DNS rebinding from using
+it. Post text is rendered as text, and only http(s) links and images from post data
+are used.
+
+Keyboard: `/` searches, `P` pauses, `Esc` clears the search and token filter. Search
+accepts plain text, `@handle`, `$TICKER` and contract addresses. Hidden accounts are
+filtered in the page; JTracker itself still receives their posts.
 
 ## External dependencies
 

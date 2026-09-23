@@ -2,22 +2,30 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Socket } from "socket.io-client";
 import { ChromiumClient } from "./src/index.js";
-import { connectSocketIO, type ChromiumSocketIOOptions } from "./src/socketio.js";
+import { closeSocketIO, connectSocketIO, describeSocketError, type ChromiumSocketIOOptions } from "./src/socketio.js";
 import { JTrackerFeed, type FeedOptions } from "./src/jtracker-feed.ts";
-export type { Activity, Author, Data, FeedChange, JTrackerEvents, Tweet, TweetContext } from "./src/jtracker-feed.ts";
+import { JTrackerAPI, type ApiHosts } from "./src/jtracker-api.ts";
+import { JTrackerSocial, type JTrackerSocialOptions } from "./src/jtracker-social.ts";
+export type { Activity, Author, CustomAccounts, Data, FeedChange, JTrackerEvents, Tweet, TweetContext } from "./src/jtracker-feed.ts";
+export { API_ENDPOINTS, API_HOSTS, JTrackerAPI, JTrackerApiError, SOCIAL_TRACKERS } from "./src/jtracker-api.ts";
+export type { ApiHosts, ApiUpdate, LoginOptions, RemoveAction, Session, SocialTracker } from "./src/jtracker-api.ts";
+export { JTrackerSocial, SOCIAL_EVENTS } from "./src/jtracker-social.ts";
+export type { JTrackerSocialEvents, SocialEvent, SocialHistoryEntry } from "./src/jtracker-social.ts";
 
-export type Region = "FRA" | "NY" | "NJ";
+/** Feed regions as the site lists them (source.js line 29605): na-east and na-central. */
+export type Region = "NY" | "DFW";
 
 const JTRACKER_URL: Record<Region, string> = {
   NY: "https://nyc.j7tracker.io",
-  NJ: "https://nj.j7tracker.io",
-  FRA: "https://fra.j7tracker.io",
+  DFW: "https://dfw.j7tracker.io",
 };
+/** Earlier region names. fra.j7tracker.io has no DNS record and nj is not a feed host on the site. */
+const RETIRED_REGIONS = new Set(["FRA", "NJ"]);
 
 const ORIGIN = "https://j7tracker.io";
 
 export interface JTrackerOptions {
-  /** Site sessionId, sent as auth.token and user_connected on each connect. */
+  /** Site sessionId: socket auth.token, user_connected, and the REST API credential. */
   token?: string;
   feed?: FeedOptions;
   /** Optional endpoint/namespace override, useful for controlled tests. */
@@ -28,29 +36,44 @@ export interface JTrackerOptions {
   log?: (...args: unknown[]) => void;
   /** Raw payload logging is opt-in; use typed events for normal processing. */
   logEvents?: boolean;
+  /** REST host overrides, useful for controlled tests. */
+  apiHosts?: Partial<ApiHosts>;
+  /** Social tracker socket settings. It stays disconnected until tracker.social.connect(). */
+  social?: Omit<JTrackerSocialOptions, "log">;
 }
 
 export default class JTracker extends JTrackerFeed {
   readonly url: string;
   readonly socket: Socket;
+  /** Account REST API: session, custom/hidden accounts, feed settings and source trackers. */
+  readonly api: JTrackerAPI;
+  /** Fomo, pump.fun, Telegram and subdomain events. Call tracker.social.connect() to start. */
+  readonly social: JTrackerSocial;
   private client: ChromiumClient;
   private closePromise?: Promise<void>;
   private stopping = false;
   private authBlocked = false;
   private retryTimer?: ReturnType<typeof setTimeout>;
   private retryDelay = 3000;
+  private paused = false;
   private receivePacket = (event: string, ...args: unknown[]) => this.handle(event, ...args);
 
   constructor(region: Region, options: JTrackerOptions = {}) {
     super(options.feed);
-    if (!Object.hasOwn(JTRACKER_URL, region)) throw new TypeError(`Unknown region: ${region}`);
+    if (!Object.hasOwn(JTRACKER_URL, region)) {
+      throw new TypeError(RETIRED_REGIONS.has(region)
+        ? `Region ${region} is not a feed region on the current site; use NY or DFW`
+        : `Unknown region: ${region}; use NY or DFW`);
+    }
     this.url = options.url ?? JTRACKER_URL[region];
     const log = options.log ?? console.log;
     let authenticatedToken: string | undefined;
     const suppliedAuth = options.socketOptions?.auth;
     const authenticate = (done: (auth: Record<string, unknown>) => void) => {
       const finish = (auth: object = {}) => {
-        const resolved: Record<string, unknown> = { ...auth, ...(options.token !== undefined ? { token: options.token } : {}) };
+        // Read at every connect: login() or a rotated session check replaces the token.
+        const token = this.api.token;
+        const resolved: Record<string, unknown> = { ...auth, ...(token !== undefined ? { token } : {}) };
         authenticatedToken = typeof resolved.token === "string" ? resolved.token : undefined;
         done(resolved);
       };
@@ -58,6 +81,17 @@ export default class JTracker extends JTrackerFeed {
       else finish(suppliedAuth);
     };
     this.client = new ChromiumClient({ origin: options.origin ?? ORIGIN, caFile: options.caFile });
+    this.api = new JTrackerAPI(this.client, {
+      token: options.token, origin: options.origin ?? ORIGIN, hosts: options.apiHosts,
+      onToken: token => this.emit("token", token),
+      onUpdate: update => {
+        if (update.kind === "custom_accounts") this.customAccounts = update.value;
+        else if (update.kind === "hidden_accounts") this.hiddenAccounts = update.value;
+        else if (update.kind === "auto_hide") this.autoHideNewAccounts = update.value;
+        else this.social.setTracked(update.tracker, update.value);
+      },
+    });
+    this.social = new JTrackerSocial(this.client, () => this.api.token, { ...options.social, log });
     this.socket = connectSocketIO(this.client, this.url, {
       // The HTTP endpoint path is distinct from the Socket.IO namespace (/).
       path: "/socket.io/",
@@ -81,10 +115,10 @@ export default class JTracker extends JTrackerFeed {
     });
 
     const retry = () => {
-      if (this.stopping || this.authBlocked || this.retryTimer || options.socketOptions?.reconnection === false) return;
+      if (this.stopping || this.paused || this.authBlocked || this.retryTimer || options.socketOptions?.reconnection === false) return;
       this.retryTimer = setTimeout(() => {
         this.retryTimer = undefined;
-        if (!this.stopping && !this.authBlocked && !this.socket.connected) this.socket.connect();
+        if (!this.stopping && !this.paused && !this.authBlocked && !this.socket.connected) this.socket.connect();
       }, this.retryDelay);
       this.retryDelay = Math.min(this.retryDelay * 2, 30_000);
     };
@@ -96,7 +130,7 @@ export default class JTracker extends JTrackerFeed {
     });
 
     this.socket.on("connect_error", (err) => {
-      log(`[socket] connect_error: ${err.message}`);
+      log(`[socket] connect_error: ${describeSocketError(err)}`);
       if (["Invalid token", "Account disabled"].includes(err.message)) {
         this.authBlocked = true; this.socket.disconnect();
         this.emit("auth_error", { error: err.message });
@@ -114,30 +148,41 @@ export default class JTracker extends JTrackerFeed {
     if (options.socketOptions?.autoConnect !== false) this.socket.connect();
   }
 
+  /** Opens the feed socket, resuming retries after disconnect(). Same as tracker.socket.connect() otherwise. */
+  connect(): this {
+    this.paused = false;
+    this.socket.connect();
+    return this;
+  }
+  /** Closes the feed socket and cancels pending retries until connect(). The tracker stays usable. */
+  disconnect(): this {
+    this.paused = true;
+    clearTimeout(this.retryTimer); this.retryTimer = undefined;
+    this.socket.disconnect();
+    return this;
+  }
+
+  /** Current session token. Setting it applies to REST calls now and to the next socket connect. */
+  get token(): string | undefined { return this.api.token; }
+  set token(value: string | undefined) { this.api.token = value; }
+
   async close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.stopping = true;
     clearTimeout(this.retryTimer); this.retryTimer = undefined;
     this.socket.offAny(this.receivePacket);
     this.closePromise = (async () => {
-      const engine = this.socket.io.engine;
-      // Give Engine.IO time to flush the namespace DISCONNECT before freeing TLS.
-      const drained = engine && engine.readyState !== "closed" ? new Promise<void>(resolve => {
-        const finish = () => { clearTimeout(timer); engine.off("close", finish); resolve(); };
-        const timer = setTimeout(finish, 2000);
-        engine.once("close", finish);
-      }) : Promise.resolve();
-      this.socket.disconnect();
-      await drained;
+      // Both sockets flush their namespace DISCONNECT before the native client frees TLS.
+      await Promise.all([closeSocketIO(this.socket), this.social.close()]);
       await this.client.close();
     })();
     return this.closePromise;
   }
 }
 
-// Importing the class does not open a connection. Run with npm run jtracker -- FRA.
+// Importing the class does not open a connection. Run with npm run jtracker -- NY (or DFW).
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const region = (process.argv[2] ?? "FRA").toUpperCase() as Region;
+  const region = (process.argv[2] ?? "NY").toUpperCase() as Region;
   const token = process.env.JTRACKER_TOKEN;
   const tracker = new JTracker(region, {
     token, logEvents: true, socketOptions: { autoConnect: false },

@@ -1,22 +1,27 @@
 # JTracker site events
 
 The application layer is based on the supplied `source.js`, read as text only.
-Its 37 distinct `Sz.on` application events are listed in `SITE_EVENTS` in
-`src/jtracker-feed.ts`. An inventory test checks these names against the bundle.
+Its 37 distinct `Sz.on` application events, plus `main_feed_auto_add_updated`, which
+the accounts panel registers on the same socket through a prop, are listed in
+`SITE_EVENTS` in `src/jtracker-feed.ts`. An inventory test checks these names
+against the bundle.
 The bundle is neither imported nor executed, and is excluded from TypeScript's
 project scan. No additional packages are needed for this layer.
 
 ```sh
 export JTRACKER_TOKEN='your-site-account-token'
-bun examples/tweets.ts FRA
-# Or: bun JTracker.ts FRA
-# Node: node --experimental-strip-types examples/tweets.ts FRA
+bun examples/tweets.ts NY
+# Or: bun JTracker.ts NY
+# Node: node --experimental-strip-types examples/tweets.ts NY
 ```
 
 The socket token is the site's `sessionId`: the bundle initializes it from
 `vu("sessionId")` at source line 247366 and refreshes the same value after login.
 The REST account API sends this same session ID in its `x-session-id` header;
 these are two uses of the same credential. Set `JTRACKER_TOKEN` to that session ID.
+`tracker.api` wraps that REST API, and `tracker.social` opens the separate source
+socket; see [the account API and source socket](jtracker-api.md). A REST response
+can rotate the token, which then applies to the next socket connect as well.
 JTracker supplies it as `auth.token`, then sends
 `user_connected` with that same token after each namespace connection, as the site
 does at source lines 253488–253550. `socketOptions.auth` also accepts an object or
@@ -27,15 +32,27 @@ fields. Tokens are not included in default logs.
 Network reconnects use the existing Socket.IO policy. Namespace refusals and
 server disconnects retry with a 3–30 second backoff unless `reconnection: false`.
 `Invalid token`, `Account disabled`, and fatal `auth_error` stop automatic retry.
-`close()` cancels pending retries and shuts down the native transport. Regional
-failover from the website is not implemented.
+`close()` cancels pending retries and shuts down the native transport.
+`disconnect()` closes the feed socket and cancels retries until `connect()`.
+
+Without a token the feed socket still connects, but the site's page never does that.
+In a 40-second sample on 2026-09-23, a tokenless connection to NY received only
+`ai_suggestion` and `ai_suggestion_update` packets, with no tweets or activities. Those
+suggestions stay pending in the feed cache until their tweet arrives; the browser UI
+shows them as cards on their own.
+
+The site lists two feed regions: `NY` (na-east, `nyc.j7tracker.io`) and `DFW`
+(na-central, `dfw.j7tracker.io`), at source line 29605. Earlier region names are
+rejected with a clear error: `fra.j7tracker.io` has no DNS record, and `nj` only
+hosts the source socket. The site's automatic failover between regions is not
+implemented. Connection errors include their transport cause, such as a DNS failure.
 
 ## Using the events
 
 ```ts
 import JTracker from '../JTracker.ts';
 
-const tracker = new JTracker('FRA', { token: process.env.JTRACKER_TOKEN });
+const tracker = new JTracker('NY', { token: process.env.JTRACKER_TOKEN });
 tracker.on('tweet', tweet => console.log(tweet.id, tweet.author.handle, tweet.text));
 tracker.on('tweet_update', (tweet, context) => console.log(context.sourceEvent, tweet));
 tracker.on('tweet_deleted', ({ id, tweet }) => console.log(id, tweet.text));
@@ -61,7 +78,9 @@ tracker.on('following_update', activity => console.log(activity.author, activity
 | `follow_scan` | Original `{ id, scan }`; also updates `getActivity(id).followScan`, including scans arriving before the activity. |
 | `external_message` | Original payload; new posts and correlated card/image/video/deletion updates also update the tweet cache. |
 | `pnl_update` | Original payload, also available as `latestPnl`. No PnL schema or calculations are invented. |
-| `connected_users`, `custom_accounts_list`, `hidden_accounts_updated` | Original payloads; update `connectedUsers`, `customAccounts`, and `hiddenAccounts`. |
+| `connected_users`, `custom_accounts_list`, `hidden_accounts_updated` | Original payloads; update `connectedUsers`, `customAccounts` (with the site's defaults), and `hiddenAccounts` (lowercased handles from either list shape). |
+| `main_feed_auto_add_updated` | Original `{ success, noAutoAdd }`; a successful update sets `autoHideNewAccounts`. |
+| `token` | The new session token after login, a rotation, or `tracker.token = ...`. Not a socket event. |
 | `admin_alert`, `admin_alert_clear` | Original payloads; update `adminAlert`. A clear for a different ID preserves the current alert. |
 | `auth_error`, `debug_response`, `buy_success`, `buy_error` | Original payloads. |
 | `quoted_tweet`, `reply_tweet` | Original payloads; these handlers are empty in the supplied site, so no extra behavior is inferred. |
@@ -104,9 +123,10 @@ case-sensitive YouTube IDs, unlike the site's blanket URL lowercasing. External
 video packets without an ID or matching URL are reported via `protocol_error`;
 the site's guess at the latest Instagram/TruthSocial post is deliberately omitted.
 
-Hidden account settings are exposed but do not filter packets automatically. UI
-sounds, highlights, pin timers, React state, watched-account REST synchronization,
-regional failover, and transaction/deployment workflows are outside this adapter.
+Hidden account settings are exposed but do not filter packets automatically; the
+browser UI in `web/` applies them. Account and watched-account REST calls live in
+`tracker.api`. UI sounds, highlights, pin timers, React state, regional failover,
+and transaction/deployment workflows are outside this adapter.
 The related Socket.IO events remain accessible. No production account was used
 to validate these handlers; tests use synthetic payloads inferred from the bundle
 and a controlled Socket.IO server over the native TLS transport.

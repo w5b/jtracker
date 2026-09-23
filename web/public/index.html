@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="dark light">
+  <title>JTracker</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <button class="icon-btn only-narrow" id="toggle-left" type="button" aria-label="Accounts and sources" aria-expanded="false" data-icon="users"></button>
+      <a class="brand" href="/" aria-label="JTracker home">
+        <img class="brand-mark" src="/favicon.svg" alt="">
+        <span class="brand-name">J<span>Tracker</span></span>
+      </a>
+      <div class="status-pill connecting" id="status" role="status" aria-live="polite">
+        <span class="dot"></span><span class="status-text">Connecting</span>
+      </div>
+      <label class="search">
+        <span data-icon="search"></span>
+        <input id="search" type="search" placeholder="Search posts, @handles, $tickers, contract addresses" autocomplete="off" spellcheck="false" aria-label="Search the feed">
+        <kbd class="kbd">/</kbd>
+      </label>
+      <div class="top-actions">
+        <span class="rate" id="rate" title="New posts in the last minute"><b>0</b>/min</span>
+        <button class="icon-btn" id="pause" type="button" aria-label="Pause the feed" aria-pressed="false" title="Pause (P)" data-icon="pause"></button>
+        <button class="icon-btn" id="sound" type="button" aria-label="Sound alerts" aria-pressed="false" title="Sound alerts for your accounts and token calls" data-icon="bell-off"></button>
+        <button class="icon-btn" id="theme" type="button" aria-label="Switch theme" title="Switch theme" data-icon="moon"></button>
+        <button class="icon-btn only-medium" id="toggle-right" type="button" aria-label="Token radar and activity" aria-expanded="false" data-icon="radar"></button>
+      </div>
+    </header>
+
+    <div class="layout">
+      <aside class="sidebar left" id="left" aria-label="Accounts and sources">
+        <section class="panel session" id="session">
+          <div class="avatar sm" id="session-avatar">·</div>
+          <div class="session-main">
+            <div class="session-name" id="session-name">Connecting…</div>
+            <div class="session-sub">
+              <span class="conn connecting" id="conn-feed"><span class="dot"></span>Feed</span>
+              <span class="conn connecting" id="conn-social"><span class="dot"></span>Sources</span>
+              <span id="session-region"></span>
+            </div>
+          </div>
+          <button class="icon-btn sm ghost" id="refresh" type="button" aria-label="Reload account data" title="Reload account data" data-icon="refresh" hidden></button>
+          <button class="icon-btn sm ghost" id="signout" type="button" aria-label="Sign out" title="Sign out" data-icon="logout" hidden></button>
+          <button class="btn sm" id="signin-open" type="button" hidden>Sign in</button>
+        </section>
+
+        <section class="panel" aria-labelledby="accounts-title">
+          <div class="panel-head">
+            <h2 class="panel-title" id="accounts-title"><span data-icon="users"></span>Your accounts</h2>
+            <span class="count" id="accounts-count">—</span>
+          </div>
+          <div class="quota" aria-hidden="true"><span id="accounts-quota"></span></div>
+          <form class="add-form" id="account-form" autocomplete="off">
+            <input class="input" id="account-input" placeholder="Add an X handle" aria-label="X handle to add" maxlength="64">
+            <button class="btn" type="submit" data-icon="plus">Add</button>
+          </form>
+          <input class="input filter-input" id="account-filter" type="search" placeholder="Filter your accounts" aria-label="Filter your accounts" hidden>
+          <ul class="list scroll-list" id="accounts"></ul>
+        </section>
+
+        <section class="panel" aria-labelledby="hidden-title">
+          <div class="panel-head">
+            <button class="collapse" type="button" id="hidden-toggle" aria-expanded="false" aria-controls="hidden">
+              <h2 class="panel-title" id="hidden-title"><span data-icon="eye-off"></span>Hidden</h2>
+              <span data-icon="chevron" class="chev-wrap"></span>
+            </button>
+            <span class="count" id="hidden-count">0</span>
+          </div>
+          <p class="panel-note" id="hidden-note">Posts from these accounts stay out of your feed.</p>
+          <ul class="list scroll-list" id="hidden" hidden></ul>
+        </section>
+
+        <section class="panel" aria-labelledby="sources-title">
+          <div class="panel-head">
+            <h2 class="panel-title" id="sources-title"><span data-icon="layers"></span>Sources</h2>
+            <span class="count" id="sources-count"></span>
+          </div>
+          <div class="tabs" role="tablist" id="source-tabs"></div>
+          <form class="add-form" id="source-form" autocomplete="off">
+            <input class="input" id="source-input" aria-label="Source to track" maxlength="200">
+            <button class="btn" type="submit" data-icon="plus">Track</button>
+          </form>
+          <ul class="list scroll-list" id="sources"></ul>
+        </section>
+
+        <section class="panel" aria-labelledby="settings-title">
+          <div class="panel-head"><h2 class="panel-title" id="settings-title"><span data-icon="sliders"></span>Settings</h2></div>
+          <div class="switch-row">
+            <div><div class="switch-label">AI token suggestions</div><div class="switch-hint">Name and ticker ideas on posts</div></div>
+            <button class="switch" id="set-ai" type="button" role="switch" aria-checked="mixed" aria-label="AI token suggestions"></button>
+          </div>
+          <div class="switch-row">
+            <div><div class="switch-label">Auto-hide new accounts</div><div class="switch-hint">Accounts newly added to the shared feed</div></div>
+            <button class="switch" id="set-autohide" type="button" role="switch" aria-checked="mixed" aria-label="Auto-hide new shared feed accounts"></button>
+          </div>
+          <div class="switch-row">
+            <div><div class="switch-label">Compact cards</div><div class="switch-hint">Denser feed, no media</div></div>
+            <button class="switch" id="set-compact" type="button" role="switch" aria-checked="false" aria-label="Compact cards"></button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="feed-col" aria-label="Live feed">
+        <div class="feed-toolbar">
+          <div class="segmented" id="filters" role="tablist" aria-label="Feed filter"></div>
+          <div class="toolbar-extra">
+            <span id="token-chip"></span>
+            <span class="showing" id="showing"></span>
+          </div>
+        </div>
+        <div class="feed" id="feed">
+          <div class="banner" id="banner" role="alert" hidden></div>
+          <button class="new-pill" id="new-pill" type="button" hidden></button>
+          <div class="feed-inner" id="feed-inner">
+            <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="sidebar right" id="right" aria-label="Token radar and activity">
+        <section class="panel" aria-labelledby="radar-title">
+          <div class="panel-head">
+            <h2 class="panel-title" id="radar-title"><span data-icon="radar"></span>Token radar</h2>
+            <span class="count" id="radar-count"></span>
+          </div>
+          <ol class="list" id="radar"></ol>
+        </section>
+        <section class="panel" aria-labelledby="activity-title">
+          <div class="panel-head">
+            <h2 class="panel-title" id="activity-title"><span data-icon="activity"></span>Activity</h2>
+            <span class="count" id="activity-count"></span>
+          </div>
+          <ol class="list" id="activity"></ol>
+        </section>
+      </aside>
+    </div>
+    <div class="scrim" id="scrim" hidden></div>
+    <dialog class="signin-dialog" id="signin" aria-labelledby="signin-title">
+      <div class="signin">
+        <button class="icon-btn sm ghost signin-close" id="signin-close" type="button" aria-label="Close" data-icon="close"></button>
+        <div class="signin-icon" data-icon="key"></div>
+        <h2 id="signin-title">Sign in to j7tracker</h2>
+        <p class="signin-lead">Signed out, the feed sends AI coin suggestions for new posts. Sign in for the posts themselves, activity, your custom and hidden accounts, sources and settings.</p>
+        <p class="signin-error" id="signin-error" role="alert" hidden></p>
+        <form class="signin-form" id="signin-form" autocomplete="off">
+          <input class="input" id="signin-token" type="password" placeholder="Session ID" aria-label="j7tracker session ID" autocomplete="off" spellcheck="false" maxlength="1024">
+          <button class="btn" type="submit" data-icon="login">Sign in</button>
+        </form>
+        <label class="check"><input type="checkbox" id="signin-remember" checked> Remember on this computer</label>
+        <details class="signin-help">
+          <summary><span data-icon="info"></span>Where do I find my session ID?</summary>
+          <ol>
+            <li>Sign in at j7tracker.io in your browser.</li>
+            <li>Open the developer tools, then Application, then Local storage, then https://j7tracker.io.</li>
+            <li>Copy the value next to <code>sessionId</code> and paste it above.</li>
+          </ol>
+          <p>It goes only to the local server on this computer, and the page never shows it again. Remembered sessions are saved in <code>~/.jtracker/session</code>, readable only by your user.</p>
+        </details>
+      </div>
+    </dialog>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+  </div>
+</body>
+</html>

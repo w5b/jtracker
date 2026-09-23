@@ -88,3 +88,22 @@ export function connectSocketIO(client, url, options = {}, websocketOptions = {}
     tryAllTransports: false,
   });
 }
+
+/** A connect_error message with its transport cause, such as a DNS or TLS failure. */
+export function describeSocketError(error) {
+  const cause = error?.description, text = cause instanceof Error ? cause.message
+    : typeof cause === 'string' ? cause : typeof cause?.message === 'string' ? cause.message : '';
+  return text && text !== error.message ? `${error.message}: ${text}` : String(error?.message ?? error);
+}
+
+/** Disconnect, then give Engine.IO time to flush the namespace DISCONNECT before the caller frees TLS. */
+export async function closeSocketIO(socket, timeoutMs = 2000) {
+  const engine = socket.io.engine;
+  const drained = engine && engine.readyState !== 'closed' ? new Promise(resolve => {
+    const finish = () => { clearTimeout(timer); engine.off('close', finish); resolve(); };
+    const timer = setTimeout(finish, timeoutMs);
+    engine.once('close', finish);
+  }) : Promise.resolve();
+  socket.disconnect();
+  await drained;
+}

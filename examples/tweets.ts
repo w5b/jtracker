@@ -2,7 +2,7 @@ import JTracker, { type Region } from '../JTracker.ts';
 
 const token = process.env.JTRACKER_TOKEN;
 if (!token) throw new Error('Set JTRACKER_TOKEN to your site account token before running this example.');
-const tracker = new JTracker((process.argv[2] ?? 'FRA').toUpperCase() as Region, {
+const tracker = new JTracker((process.argv[2] ?? 'NY').toUpperCase() as Region, {
   token, socketOptions: { autoConnect: false }, feed: { maxTweets: 500 },
 });
 

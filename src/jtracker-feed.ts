@@ -1,9 +1,9 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { array, author, identifier, isObject, mergeData, normalizeTweet, object, postKey, string, tweetKeys } from './jtracker-model.ts';
-import type { Activity, Data, Tweet } from './jtracker-model.ts';
-export type { Activity, Author, Data, Media, Tweet } from './jtracker-model.ts';
+import { array, author, customAccounts, hiddenHandles, identifier, isObject, mergeData, normalizeTweet, object, postKey, string, tweetKeys } from './jtracker-model.ts';
+import type { Activity, CustomAccounts, Data, Tweet } from './jtracker-model.ts';
+export type { Activity, Author, CustomAccounts, Data, Media, Tweet } from './jtracker-model.ts';
 
 export const ACTIVITY_EVENTS = [
   'following_update', 'unfollowing_update', 'profile_update', 'profile_pinned_update',
@@ -16,8 +16,10 @@ export const FORWARDED_EVENTS = [
   'debug_response', 'buy_success', 'buy_error', 'quoted_tweet', 'reply_tweet',
   'follow_scan', 'external_message', 'coin_community_event', 'charity_event',
   'wallet_tracker_claim', 'vamp_trigger', 'vamp_update_trigger',
+  // Registered through the socket prop of the accounts panel (source.js line 150998), not on Sz.
+  'main_feed_auto_add_updated',
 ] as const;
-/** Inventory of all distinct application handlers on Sz in source.js. */
+/** Inventory of all distinct application handlers on Sz in source.js, plus the one above. */
 export const SITE_EVENTS = [
   ...ACTIVITY_EVENTS, ...FORWARDED_EVENTS, 'pnl_update', 'connected_users',
   'initialTweets', 'tweet', 'tweet_update', 'tweet.subtweet.update', 'tweet_deleted',
@@ -33,6 +35,8 @@ export type JTrackerEvents = { [K in ActivityEvent]: [activity: Activity] }
     connect: [];
     disconnect: [reason: string, details?: unknown];
     connect_error: [error: Error];
+    /** The session token changed through login(), checkSession() rotation, or the token setter. */
+    token: [token: string | undefined];
     raw: [event: string, ...args: unknown[]];
     protocol_error: [problem: { event: string; message: string; payload: unknown }];
     initialTweets: [tweets: Tweet[]];
@@ -66,8 +70,10 @@ export class JTrackerFeed extends EventEmitter<JTrackerEvents> {
   private readonly pending = new Map<string, Pending>();
   private readonly seen = new Map<string, number>();
   connectedUsers: unknown[] = [];
-  hiddenAccounts: unknown[] = [];
-  customAccounts: Data | null = null;
+  hiddenAccounts: string[] = [];
+  customAccounts: CustomAccounts | null = null;
+  /** The "Auto-hide new main feed accounts" setting, once the server or an API call reports it. */
+  autoHideNewAccounts: boolean | null = null;
   adminAlert: Data | null = null;
   latestPnl: unknown = null;
 
@@ -273,8 +279,9 @@ export class JTrackerFeed extends EventEmitter<JTrackerEvents> {
         }
       }
     } else if (event === 'external_message') this.external(payload);
-    else if (event === 'hidden_accounts_updated') this.hiddenAccounts = [...array(payload.hidden)];
-    else if (event === 'custom_accounts_list') this.customAccounts = payload;
+    else if (event === 'hidden_accounts_updated') this.hiddenAccounts = hiddenHandles(payload.hidden);
+    else if (event === 'custom_accounts_list') this.customAccounts = customAccounts(payload);
+    else if (event === 'main_feed_auto_add_updated' && payload.success) this.autoHideNewAccounts = payload.noAutoAdd === true;
     else if (event === 'admin_alert' && string(payload.message).trim()) this.adminAlert = payload;
     else if (event === 'admin_alert_clear' && (!payload.id || !this.adminAlert?.id || payload.id === this.adminAlert.id)) this.adminAlert = null;
     this.emit(event as ForwardedEvent, payload);

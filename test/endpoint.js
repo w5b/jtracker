@@ -13,7 +13,10 @@ import { clientHello, frame, observeWebSocketFrames } from '../validation/wire.j
 const listen = server => new Promise((resolve, reject) => {
   server.once('error', reject); server.listen(0, '127.0.0.1', () => { server.off('error', reject); resolve(server.address().port); });
 });
-export async function endpoint({ socketIO = false } = {}) {
+/** socketIO: true or a list of path prefixes left to Socket.IO. handler(req, res, body) returns true when it
+ * replied; it only sees HTTP/1.1, so pair it with h2: false when clients would otherwise negotiate HTTP/2. */
+export async function endpoint({ socketIO = false, handler, h2 = true } = {}) {
+  const socketIOPaths = socketIO === true ? ['/socket.io/'] : Array.isArray(socketIO) ? socketIO : [];
   const dir = await mkdtemp(join(tmpdir(), 'chromium-net-test-'));
   execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', join(dir, 'key.pem'),
     '-out', join(dir, 'cert.pem'), '-days', '1', '-subj', '/CN=localhost', '-addext', 'subjectAltName=DNS:localhost,IP:127.0.0.1'], { stdio: 'ignore' });
@@ -25,6 +28,7 @@ export async function endpoint({ socketIO = false } = {}) {
     const chunks = []; for await (const chunk of req) chunks.push(chunk);
     const observation = { path: req.url, method: req.method, rawHeaders: req.rawHeaders, bodyHex: Buffer.concat(chunks).toString('hex'), remotePort: req.socket.remotePort };
     requests.push(observation);
+    if (handler && await handler(req, res, Buffer.concat(chunks))) return;
     const path = req.url.split('?')[0];
     if (path === '/slow') return;
     if (path === '/large') { res.end(Buffer.alloc(1024 * 1024, 65)); return; }
@@ -47,7 +51,7 @@ export async function endpoint({ socketIO = false } = {}) {
     if (req.url === '/bad-extension') headers.push('Sec-WebSocket-Extensions: unsupported-extension');
   });
   plain.on('upgrade', (req, socket, head) => {
-    if (socketIO && req.url.startsWith('/socket.io/')) return;
+    if (socketIOPaths.some(prefix => req.url.startsWith(prefix))) return;
     upgrades.push({ path: req.url, headers: req.headers, rawHeaders: req.rawHeaders });
     if (req.url === '/bad-accept') {
       socket.end('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: invalid\r\n\r\n'); return;
@@ -66,7 +70,7 @@ export async function endpoint({ socketIO = false } = {}) {
   const plainPort = await listen(plain);
 
   const pending = new Map();
-  const secure = tls.createServer({ key, cert, ALPNProtocols: ['h2', 'http/1.1'] }, socket => {
+  const secure = tls.createServer({ key, cert, ALPNProtocols: h2 ? ['h2', 'http/1.1'] : ['http/1.1'] }, socket => {
     track(socket);
     const record = pending.get(socket.remotePort);
     if (record) { record.alpn = socket.alpnProtocol; record.tlsVersion = socket.getProtocol(); record.cipher = socket.getCipher(); }

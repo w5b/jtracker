@@ -57,7 +57,7 @@ test('Socket.IO and JTracker over the native Chromium WebSocket transport', { ti
     await server.close();
   });
   function tracker(options = {}) {
-    const tracker = new JTracker('FRA', {
+    const tracker = new JTracker('NY', {
       url: server.https, origin: server.https, caFile: server.caFile, log: () => {},
       ...options,
       socketOptions: { autoConnect: false, reconnectionDelay: 20, reconnectionDelayMax: 40, randomizationFactor: 0, ...options.socketOptions },
@@ -66,7 +66,7 @@ test('Socket.IO and JTracker over the native Chromium WebSocket transport', { ti
   }
 
   await t.test('JTracker connects to / with EIO=4, Chromium TLS/headers and ordinary Socket.IO events', async () => {
-    const client = tracker({ socketOptions: { auth: { token: 'test' }, query: { region: 'FRA' } } });
+    const client = tracker({ socketOptions: { auth: { token: 'test' }, query: { region: 'NY' } } });
     const welcome = event(client.socket, 'welcome');
     await connect(client.socket);
     assert.deepEqual((await welcome)[0], { namespace: '/' });
@@ -76,7 +76,7 @@ test('Socket.IO and JTracker over the native Chromium WebSocket transport', { ti
     assert.match(request.url, /^\/socket\.io\/\?/);
     const query = new URL(request.url, server.https).searchParams;
     assert.equal(query.get('EIO'), '4'); assert.equal(query.get('transport'), 'websocket');
-    assert.equal(query.get('region'), 'FRA');
+    assert.equal(query.get('region'), 'NY');
     assert.equal(request.headers.origin, server.https);
     assert.equal(request.headers['user-agent'], PROFILE.userAgent);
     assert.equal(request.headers['sec-websocket-extensions'], 'permessage-deflate; client_max_window_bits');
@@ -140,6 +140,25 @@ test('Socket.IO and JTracker over the native Chromium WebSocket transport', { ti
     const disconnected = event(revoked, 'disconnect');
     peers.at(-1).emit('auth_error', { error: 'Account disabled' });
     await disconnected; assert.equal(revoked.socket.active, false); await revoked.close();
+  });
+
+  await t.test('feed regions, and disconnect() cancels a pending retry until connect()', { timeout: 8000 }, async () => {
+    assert.throws(() => new JTracker('FRA', { socketOptions: { autoConnect: false } }), /FRA is not a feed region on the current site; use NY or DFW/);
+    assert.throws(() => new JTracker('LON', { socketOptions: { autoConnect: false } }), /Unknown region: LON; use NY or DFW/);
+    const dfw = new JTracker('DFW', { socketOptions: { autoConnect: false }, log: () => {} });
+    assert.equal(dfw.url, 'https://dfw.j7tracker.io'); await dfw.close();
+
+    const client = tracker({ token: 'site-token' });
+    let connected = event(client.socket, 'connect'); client.connect(); await connected;
+    // A server-side disconnect schedules JTracker's own retry; disconnect() must cancel it.
+    const dropped = event(client, 'disconnect');
+    peers.at(-1).disconnect(true); await dropped;
+    client.disconnect();
+    await new Promise(resolve => setTimeout(resolve, 3500));
+    assert.equal(client.socket.connected, false);
+    connected = event(client.socket, 'connect'); client.connect(); await connected;
+    assert.equal(client.socket.connected, true);
+    await client.close();
   });
 
   await t.test('Engine.IO heartbeats and automatic reconnection retain the native transport', async () => {

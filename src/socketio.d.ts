@@ -13,3 +13,7 @@ export declare function connectSocketIO(
   client: ChromiumClient, url: string, options?: ChromiumSocketIOOptions,
   websocketOptions?: WebSocketOptions,
 ): Socket;
+/** A connect_error message with its transport cause, such as a DNS or TLS failure. */
+export declare function describeSocketError(error: Error): string;
+/** Disconnects, then waits up to timeoutMs (default 2000) for Engine.IO to close before resolving. */
+export declare function closeSocketIO(socket: Socket, timeoutMs?: number): Promise<void>;
