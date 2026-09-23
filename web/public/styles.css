@@ -272,14 +272,23 @@ svg { display: block; flex: none; }
 .chip button svg { width: 12px; height: 12px; }
 .showing { font-size: 12px; color: var(--text-3); white-space: nowrap; }
 
-.feed { flex: 1; overflow-y: auto; padding: 18px 22px 90px; position: relative; scroll-behavior: auto; }
+.feed { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 22px 90px; position: relative; scroll-behavior: auto; }
 .feed-inner { max-width: 740px; margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+/* Floats over the top of the feed so showing it never shifts the posts under the mouse. */
+.feed-wrap { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .new-pill {
-  position: sticky; top: 0; z-index: 6; margin: -6px auto 8px; display: flex; align-items: center; gap: 8px;
+  position: absolute; top: 12px; left: 0; right: 0; width: max-content; margin: 0 auto; z-index: 6; display: flex; align-items: center; gap: 8px;
   height: 36px; padding: 0 16px 0 12px; border-radius: 999px; border: 0; color: #fff; font-weight: 750; font-size: 13px;
   background: var(--grad); box-shadow: 0 12px 30px -8px rgba(91, 140, 255, 0.75); animation: drop 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 .new-pill svg { width: 15px; height: 15px; }
+.new-pill.paused {
+  color: var(--text); background: var(--panel-solid); border: 1px solid rgba(251, 191, 36, 0.5);
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.1), 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+}
+.new-pill.paused svg { color: var(--amber); }
+.new-pill.paused b { letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px; }
+.new-pill .pill-count { color: var(--text-2); font-weight: 650; }
 @keyframes drop { from { opacity: 0; transform: translateY(-10px); } }
 .banner {
   max-width: 740px; margin: 0 auto 14px; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border-radius: 14px;

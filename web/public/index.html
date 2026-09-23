@@ -102,6 +102,10 @@
             <button class="switch" id="set-autohide" type="button" role="switch" aria-checked="mixed" aria-label="Auto-hide new shared feed accounts"></button>
           </div>
           <div class="switch-row">
+            <div><div class="switch-label">Pause on hover</div><div class="switch-hint">Hold new posts while the mouse is on the feed</div></div>
+            <button class="switch" id="set-hover" type="button" role="switch" aria-checked="true" aria-label="Pause on hover"></button>
+          </div>
+          <div class="switch-row">
             <div><div class="switch-label">Compact cards</div><div class="switch-hint">Denser feed, no media</div></div>
             <button class="switch" id="set-compact" type="button" role="switch" aria-checked="false" aria-label="Compact cards"></button>
           </div>
@@ -116,11 +120,13 @@
             <span class="showing" id="showing"></span>
           </div>
         </div>
-        <div class="feed" id="feed">
-          <div class="banner" id="banner" role="alert" hidden></div>
+        <div class="feed-wrap" id="feed-wrap">
           <button class="new-pill" id="new-pill" type="button" hidden></button>
-          <div class="feed-inner" id="feed-inner">
-            <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+          <div class="feed" id="feed">
+            <div class="banner" id="banner" role="alert" hidden></div>
+            <div class="feed-inner" id="feed-inner">
+              <div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>
+            </div>
           </div>
         </div>
       </main>

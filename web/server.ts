@@ -146,19 +146,20 @@ export class TrackerServer {
     });
     for (const event of ['custom_accounts_list', 'hidden_accounts_updated'] as const) tracker.on(event, () => this.broadcast('accounts', this.accounts()));
     tracker.on('main_feed_auto_add_updated', () => this.broadcast('settings', this.settings()));
-    // Without a session the feed carries AI suggestions but not the posts they belong to. Show
-    // each as a card until its post arrives; a post that is already here carries its own suggestion.
+    // Suggestions cover posts from accounts beyond your feed. Signed in, the site shows them only on
+    // posts you receive, and the feed cache attaches them. Signed out they are all the feed sends, so
+    // each becomes a card until its post arrives.
     const postId = (payload: Data) => string(payload.tweet_id) || /\/status(?:es)?\/(\d+)/.exec(string(payload.tweet_url))?.[1] || '';
     tracker.on('ai_suggestion', payload => {
       const id = postId(payload);
-      if (!id || tracker.getTweet(id)) return;
+      if (this.status.session !== 'signed-out' || !id || tracker.getTweet(id)) return;
       const post = suggestionPost(payload, Date.now(), this.pendingMatches.get(id) ?? this.posts.get(id)?.matches ?? []);
       this.pendingMatches.delete(id);
       if (post) this.upsert(post);
     });
     tracker.on('ai_suggestion_update', payload => {
       const id = postId(payload), existing = this.posts.get(id);
-      if (!id || tracker.getTweet(id)) return;
+      if (this.status.session !== 'signed-out' || !id || tracker.getTweet(id)) return;
       if (existing?.kind === 'suggestion') return this.upsert({ ...existing, matches: matchesOf([...existing.matches, ...(Array.isArray(payload.results) ? payload.results : [])]) });
       this.pendingMatches.set(id, matchesOf([...(this.pendingMatches.get(id) ?? []), ...(Array.isArray(payload.results) ? payload.results : [])]));
       while (this.pendingMatches.size > 500) this.pendingMatches.delete(this.pendingMatches.keys().next().value!);
@@ -263,10 +264,21 @@ export class TrackerServer {
     this.status.username = username;
     tracker.disconnect(); // the feed may be up without a session; reconnect it with one
     this.setStatus({ session: 'signed-in', feed: 'connecting', social: 'connecting', error: '' });
+    this.dropSuggestionCards();
     tracker.connect();
     tracker.social.connect();
     void this.loadAccountData();
     return true;
+  }
+  /**
+   * Signed in, suggestion-only cards belong to posts outside your feed, which the site never shows.
+   * Their suggestions stay in the feed cache and attach to any post that does arrive.
+   */
+  private dropSuggestionCards(): void {
+    this.pendingMatches.clear();
+    let dropped = false;
+    for (const [id, post] of this.posts) if (post.kind === 'suggestion') { this.posts.delete(id); dropped = true; }
+    if (dropped) this.broadcast('snapshot', this.snapshot());
   }
   /** Forgets the token and clears account state, then keeps the feed going without a session. */
   private async signOut(reason: string): Promise<void> {

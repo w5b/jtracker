@@ -199,17 +199,21 @@ const state = {
   filter: FILTERS.some(f => f.id === storage.get('filter')) ? storage.get('filter') : 'all',
   query: '', token: null, paused: false, queue: [], arrivals: [],
   sound: storage.get('sound', false) === true, compact: storage.get('compact', false) === true,
+  // Like the site's pauseOnHover setting, on unless turned off: new posts wait while the mouse is on the feed.
+  pauseOnHover: storage.get('pauseOnHover', true) !== false, hovering: false,
   sourceTab: SOURCE_TABS.some(t => t.kind === storage.get('sourceTab')) ? storage.get('sourceTab') : 'telegram',
   hiddenOpen: storage.get('hiddenOpen', false) === true,
   avatars: new Map(), lastSeen: new Map(), tokenInfo: new Map(),
 };
 let CUSTOM = new Set(), HIDDEN = new Set();
 const cards = new Map();
-const feed = $('#feed'), feedInner = $('#feed-inner'), newPill = $('#new-pill'), search = $('#search');
+const feed = $('#feed'), feedWrap = $('#feed-wrap'), feedInner = $('#feed-inner'), newPill = $('#new-pill'), search = $('#search');
 const isCustom = post => post.custom || CUSTOM.has(lower(post.author.handle));
 const signedIn = () => state.status?.session === 'signed-in';
 const signedOut = () => state.status?.session === 'signed-out';
 const isHidden = post => post.source === 'x' && HIDDEN.has(lower(post.author.handle));
+/** New posts wait while paused, while the mouse is on the feed, or while scrolled away from the top. */
+const holding = () => state.paused || (state.pauseOnHover && state.hovering);
 
 function remember(post) {
   // Token details from any post also label bare contract addresses elsewhere in the feed.
@@ -440,16 +444,22 @@ function onPost(post, action) {
       existing.replaceWith(card); cards.set(post.id, card);
     }
   } else if (visible(post)) {
-    if (state.paused || feed.scrollTop > 80) { if (!state.queue.includes(post.id)) state.queue.push(post.id); updateNewPill(); }
+    if (holding() || feed.scrollTop > 80) { if (!state.queue.includes(post.id)) state.queue.push(post.id); updateNewPill(); }
     else insertSorted(post, arrival);
   }
   scheduleCounts(); scheduleSide();
 }
+/** "Paused" whenever the feed is held, like the site's indicator; otherwise the count of new posts, if any. */
 function updateNewPill() {
   state.queue = state.queue.filter(id => state.posts.has(id) && !cards.has(id));
-  const count = state.queue.length;
-  newPill.hidden = count === 0;
-  if (count) newPill.replaceChildren(icon('arrow-up'), `${count} new ${count === 1 ? 'post' : 'posts'}${state.paused ? ' · paused' : ''}`);
+  const count = state.queue.length, paused = holding(), posts = `${count} new ${count === 1 ? 'post' : 'posts'}`;
+  newPill.hidden = !paused && count === 0;
+  newPill.classList.toggle('paused', paused);
+  // replaceChildren would print a null child as the text "null", so only real nodes go in.
+  if (paused) newPill.replaceChildren(...[icon('pause'), h('b', { text: 'Paused' }), count ? h('span', { class: 'pill-count', text: `· ${posts}` }) : null].filter(Boolean));
+  else if (count) newPill.replaceChildren(icon('arrow-up'), posts);
+  newPill.title = state.paused ? 'Paused. Click or press P to resume.'
+    : paused ? 'Paused while your mouse is on the feed. Move it away, or click to show new posts.' : 'Show new posts';
 }
 function flushQueue() {
   const posts = state.queue.splice(0).map(id => state.posts.get(id)).filter(post => post && visible(post) && !cards.has(post.id)).sort((a, b) => -newestFirst(a, b));
@@ -600,6 +610,7 @@ function renderSettings() {
   setSwitch($('#set-autohide'), state.settings.autoHide);
   $('#set-ai').disabled = $('#set-autohide').disabled = !signedIn();
   setSwitch($('#set-compact'), state.compact);
+  setSwitch($('#set-hover'), state.pauseOnHover);
   document.body.classList.toggle('compact', state.compact);
 }
 function radarData() {
@@ -707,7 +718,12 @@ function renderToggles() {
 function togglePause() {
   state.paused = !state.paused;
   renderToggles(); updateNewPill();
-  if (!state.paused && feed.scrollTop < 80) flushQueue();
+  if (!holding() && feed.scrollTop < 80) flushQueue();
+}
+/** Releases held posts once nothing is holding them and the feed is at the top. */
+function releaseHeld() {
+  if (!holding() && feed.scrollTop < 80 && state.queue.length) flushQueue();
+  else updateNewPill();
 }
 const currentTheme = () => document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
 function togglePanel(side) {
@@ -839,8 +855,14 @@ function init() {
   $('#toggle-left').addEventListener('click', () => togglePanel('left'));
   $('#toggle-right').addEventListener('click', () => togglePanel('right'));
   $('#scrim').addEventListener('click', closePanels);
-  newPill.addEventListener('click', flushQueue);
-  feed.addEventListener('scroll', () => { if (feed.scrollTop < 10 && !state.paused && state.queue.length) flushQueue(); }, { passive: true });
+  // A click shows waiting posts at once; if the feed was paused with the button or P, it also resumes.
+  newPill.addEventListener('click', () => { if (state.paused) { state.paused = false; renderToggles(); } flushQueue(); });
+  feed.addEventListener('scroll', () => { if (feed.scrollTop < 10 && !holding() && state.queue.length) flushQueue(); }, { passive: true });
+  // Mouse only: touch has no hover, and a tap would otherwise leave the feed on hold.
+  // The wrapper includes the floating pill, so reaching for the pill still counts as hovering the feed.
+  feedWrap.addEventListener('pointerenter', event => { if (event.pointerType === 'mouse') { state.hovering = true; updateNewPill(); } });
+  feedWrap.addEventListener('pointerleave', event => { if (event.pointerType === 'mouse') { state.hovering = false; releaseHeld(); } });
+  $('#set-hover').addEventListener('click', () => { state.pauseOnHover = !state.pauseOnHover; storage.set('pauseOnHover', state.pauseOnHover); renderSettings(); releaseHeld(); });
   document.addEventListener('keydown', event => {
     const active = document.activeElement, typing = active && (/^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) || active.isContentEditable);
     if (event.key === '/' && !typing) { event.preventDefault(); search.focus(); search.select(); }

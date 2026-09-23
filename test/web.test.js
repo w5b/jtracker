@@ -171,6 +171,9 @@ test('web server: static page, local-only guards, stream and account actions', {
   assert.equal(events[0].event, 'snapshot'); assert.equal(events[0].data.status.mode, 'demo');
   assert.equal(events.at(-1).data.action, 'new'); assert.deepEqual(events.at(-1).data.post.addresses, [SOL]);
   assert.equal((await state()).posts.length, 1);
+  // Signed in, a suggestion for a post outside your feed stays out of it, as on the site.
+  demo.handle('ai_suggestion', { tweet_id: '2102640815579533600', tweet_url: 'https://x.com/elsewhere/status/2102640815579533600', prediction: 'Elsewhere', ticker: 'ELSE' });
+  assert.equal((await state()).posts.length, 1);
 
   const added = stream(`${base}/api/stream`, event => event.event === 'accounts');
   await new Promise(resolve => setTimeout(resolve, 100));
@@ -247,4 +250,12 @@ test('web server: signed out, AI suggestions become cards until their post arriv
   demo.handle('ai_suggestion', { tweet_id: sid, prediction: 'Second idea', ticker: 'IDEA' });
   const all = await posts();
   assert.equal(all.length, 1); assert.equal(all[0].ai.ticker, 'IDEA');
+
+  // Signing in drops suggestion-only cards, which belong to posts outside your feed; full posts stay.
+  const orphan = ((1790000005000n - 1288834974657n) << 22n).toString();
+  demo.handle('ai_suggestion', { tweet_id: orphan, tweet_url: `https://x.com/elsewhere/status/${orphan}`, prediction: 'Elsewhere', ticker: 'ELSE' });
+  assert.deepEqual((await posts()).map(item => item.kind), ['post', 'suggestion']);
+  const signIn = await request(`${base}/api/session`, { method: 'POST', headers: { Origin: base, 'Content-Type': 'application/json' }, body: JSON.stringify({ token: 'session', remember: false }) });
+  assert.equal(signIn.status, 200);
+  assert.deepEqual((await posts()).map(item => [item.kind, item.id]), [['post', sid]]);
 });
